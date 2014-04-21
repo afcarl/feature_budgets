@@ -3,6 +3,16 @@ import re
 import numpy as np
 import numpy.ma as ma
 
+def weighted_sample(weights):
+    '''Randomly sample a value proportional to the given weights.'''
+    probs = weights / weights.sum()
+    u = np.random.random()
+    cur = 0.
+    for i,p in enumerate(probs):
+        cur += p
+        if u <= cur:
+            return i
+    raise Exception('Weights do not normalize properly! {0}'.format(weights))
 
 def pretty_str(p, decimal_places=2):
     '''Pretty-print a matrix or vector.'''

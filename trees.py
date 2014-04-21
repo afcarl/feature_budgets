@@ -5,18 +5,7 @@ import os
 import numpy as np
 import numpy.ma as ma
 from graphviz import Digraph
-from utils import pretty_str
-
-def weighted_sample(weights):
-    '''Randomly sample a value proportional to the given weights.'''
-    probs = weights / weights.sum()
-    u = np.random.random()
-    cur = 0.
-    for i,p in enumerate(probs):
-        cur += p
-        if u <= cur:
-            return i
-    raise Exception('Weights do not normalize properly! {0}'.format(weights))
+from utils import *
 
 class DecisionNode(object):
     def __init__(self, node_id, feature, children, weights):
