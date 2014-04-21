@@ -60,7 +60,7 @@ Extensions:
 import numpy as np
 import numpy.ma as ma
 from utils import *
-from data_generator import *
+from trees import *
 
 def generate_data(count):
     pass
@@ -87,6 +87,9 @@ if __name__ == '__main__':
     data = gentree.sample(NUM_INSTANCES)
 
     print 'Data:\n{0}'.format(pretty_str(data, 0))
+
+    print 'Rendering test.pdf...'
+    gentree.render('figures/test.pdf')
 
 
 
