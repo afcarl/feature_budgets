@@ -4,6 +4,8 @@ Tools to generate various types of synthetic data.
 import os
 import numpy as np
 import numpy.ma as ma
+from copy import deepcopy
+from itertools import product
 from graphviz import Digraph
 from utils import *
 
@@ -26,10 +28,35 @@ class DecisionNode(object):
         Predicted the classification probabilities for this instance,
         where some features may be missing.
         '''
-        if instance[feature] is ma.masked:
+        if instance[self.feature] is ma.masked:
             # If we do not have this feature, marginalize it out
-            return np.sum([w * c.predict(instance)], axis=0)
-        return self.children[instance.data[feature]].predict(instance)
+            return np.sum([w * c.predict(instance) for w,c in zip(self.weights, self.children)], axis=0)
+        return self.children[instance.data[self.feature]].predict(instance)
+
+    def feature_probs(self, instance, features, values, num_values_per_feature):
+        '''
+        Calculate the joint probability of the feature values given the
+        instance.
+        '''
+        if self.feature in features:
+            # Get the index of the feature value
+            i = features.index(self.feature)
+            fval = values[i]
+
+            # Remove this feature from the lists
+            features = features[0:i] + features[i+1:]
+            values = values[0:i] + values[i+1:0]
+
+            # Weight the result by the likelihood of getting this feature value
+            return self.weights[fval] * self.children[fval].feature_probs(instance, features, values, num_values_per_feature)
+        
+        # If this isn't one of the features, check if this feature is missing in the instance
+        if instance[self.feature] is ma.masked:
+            # If it is missing, consider all possible paths
+            return np.sum([w * c.feature_probs(instance, features, values, num_values_per_feature) for w,c in zip(self.weights, self.children)])
+
+        # If this feature is a conditional parameter, find that node and recurse on it
+        return self.children[instance[self.feature]].feature_probs(instance, features, values, num_values_per_feature)
 
     def sample(self, instance):
         '''
@@ -66,6 +93,11 @@ class LeafNode(object):
     def predict(self, instance):
         return self.probs
 
+    def feature_probs(self, instance, features, values, num_values_per_feature):
+        # If we reached a leaf node, any remaining features are considered to be
+        # uniformly distributed.
+        return (1. / num_values_per_feature) ** len(features)
+
     def sample(self, instance):
         instance[-1] = weighted_sample(self.probs)
 
@@ -88,6 +120,9 @@ class RootNode(object):
     def predict(self, instance):
         return self.children[0].predict(instance)
 
+    def feature_probs(self, instance, features, values, num_values_per_feature):
+        return self.children[0].feature_probs(instance, features, values, num_values_per_feature)
+
     def sample(self, instance):
         return self.children[0].sample(instance)
 
@@ -102,6 +137,8 @@ class GenerativeTree(object):
     '''
     A generative model for synthetic data.
     TODO: Add dirichlet bias for certain classes
+    TODO: Add dirichlet bias for certain features
+    TODO: Add path coloring for a given instance
     '''
     def __init__(self, num_features, num_values_per_feature, num_classes, max_nodes):
         assert(max_nodes > 0)
@@ -167,8 +204,6 @@ class GenerativeTree(object):
             instance = ma.masked_array(np.random.choice(self.num_values_per_feature, self.num_features+1),
                                         mask=np.zeros(self.num_features+1, dtype=int))
 
-            instance[-1] = -1
-
             # Sample our decision tree to add structure to the data.
             self.root.sample(instance)
 
@@ -176,6 +211,14 @@ class GenerativeTree(object):
             results.append(instance)
 
         return ma.masked_array(results)
+
+    def predict(self, instance):
+        '''Calculate the distribution of class membership likelihood for the instance.'''
+        return self.root.predict(instance)
+
+    def feature_probs(self, instance, features, values):
+        '''Calculate the joint probability of the feature values given the instance.'''
+        return self.root.feature_probs(instance, features, values, self.num_values_per_feature)
 
     def graphviz_str(self):
         '''Generate a graphviz string of the tree.'''
@@ -189,17 +232,141 @@ class GenerativeTree(object):
         os.remove(filename)
         os.rename(filename + '.pdf', filename)
 
+class FeatureNode(object):
+    def __init__(self, node_id, feature, children):
+        self.node_id = node_id
+        self.feature = feature
+        self.children = children
+
+    def render(self, dot):
+        '''Render the node graphically using the graphviz dot object.'''
+        for child in self.children:
+            child.render(dot)
+        dot.node(str(self.node_id), 'f{0}'.format(self.feature))
+        for child in self.children:
+            dot.edge(str(self.node_id), str(child.node_id))
+
+class ValueNode(object):
+    def __init__(self, node_id, features, children, values):
+        self.node_id = node_id
+        self.features = features
+        self.children = children
+        self.values = values
+
+    def render(self, dot):
+        '''Render the node graphically using the graphviz dot object.'''
+        for child in self.children:
+            child.render(dot)
+        dot.node(str(self.node_id), '', style='filled')
+        for i,child in enumerate(self.children):
+            label = '\n'.join(['f{0}={1}'.format(f,v) for f,v in zip(self.features, self.values[i])])
+            dot.edge(str(self.node_id), str(child.node_id), label=label)
+
+class StepRootNode(object):
+    def __init__(self, node_id, children, step):
+        self.node_id = node_id
+        self.children = children
+        self.step = step
+
+    def render(self, dot):
+        '''Render the node graphically using the graphviz dot object.'''
+        for child in self.children:
+            child.render(dot)
+        dot.node(str(self.node_id), label='Step {0}'.format(self.step))
+        for child in self.children:
+            dot.edge(str(self.node_id), str(child.node_id))
 
 class FeatureAcquisitionTree(object):
-    def __init__(self, instance, generative_tree, budgets, costs):
+    def __init__(self, instance, model, feature_probs, feature_costs, budgets, available_features, num_values_per_feature, num_classes):
         self.instance = instance
-        self.generative_tree = generative_tree
+        self.model = model
+        self.feature_probs = feature_probs
+        self.feature_costs = feature_costs
         self.budgets = budgets
-        self.costs = costs
+        self.available_features = available_features
+        self.num_values_per_feature = num_values_per_feature
+        self.num_classes = num_classes
+        self.root = None
         self.build()
 
     def build(self):
-        missing = list(np.where(self.instance.mask != 0)[0])
+        self.root = StepRootNode(0, [], 0)
+        next_id = 1
+        num_nodes = self.build_helper(self.root, self.available_features, 0, self.budgets[0], [], self.instance, next_id)
+
+    def build_helper(self, node, available, step, remaining, purchased, instance, next_id):
+        can_afford_at_least_one_feature = False
+        # Add each feature that is within our budget
+        for i,feature in enumerate(available):
+            child_remaining = remaining - self.feature_costs[feature]
+            
+            # If we can't afford it, skip this feature this step
+            if child_remaining < 0:
+                continue
+
+            can_afford_at_least_one_feature = True
+
+            # Create the child node
+            child = FeatureNode(next_id, feature, [])
+            
+            # Recursively build the subtree with this feature acquired
+            next_id = self.build_helper(child, available[0:i] + available[i+1:],
+                                        step, child_remaining,
+                                        purchased + [feature], instance, next_id + 1)
+
+            # Add the child to its parent
+            node.children.append(child)
+
+        # If we were able to afford at least one feature, then we don't need a partition node here.
+        if can_afford_at_least_one_feature:
+            return next_id
+
+        # Make this the partition node
+        step += 1
+        
+        # Look at all combinations of results from the last step
+        grandchildren_values = [x for x in product(xrange(self.num_values_per_feature), repeat=len(purchased))]
+
+        child = ValueNode(next_id, purchased, [], grandchildren_values)
+        next_id += 1
+
+        # Consider every possible outcome of our feature acquisitions
+        temp_data = instance.data[purchased]
+        for vals in grandchildren_values:
+            # Set the feature values to this possibility
+            
+            instance[purchased] = vals
+
+            # If we there is no next step, return the final prediction
+            if step == len(self.budgets) or len(available) == 0:
+                prediction = self.model.predict(instance)
+                child.children.append(LeafNode(next_id, prediction))
+                next_id += 1
+
+            # Otherwise, start the whole process over again for each child node
+            else:
+                grandchild = StepRootNode(next_id, [], step)
+                next_id = self.build_helper(grandchild, available, step, self.budgets[step], [], instance, next_id + 1)
+                child.children.append(grandchild)
+
+        # Undo the temporary changes to the instance
+        instance.data[purchased] = temp_data
+        instance.mask[purchased] = 1
+
+        # Add the child to its parent
+        node.children.append(child)
+
+        return next_id
+
+    def render(self, filename):
+        '''Create a PDF image of the tree.'''
+        dot = Digraph()
+        self.root.render(dot)
+        dot.render(filename)
+        os.remove(filename)
+        os.rename(filename + '.pdf', filename)
+
+
 
 
 

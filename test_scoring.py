@@ -74,23 +74,50 @@ def create_model(data):
 if __name__ == '__main__':
     # The parameters of the experiment
     NUM_FEATURES = 10
-    NUM_VALUES_PER_FEATURE = 3
+    NUM_VALUES_PER_FEATURE = 2
     NUM_CLASSES = 3
     NUM_INSTANCES = 10
     NUM_NODES = 20
-    SPARSITY = 0.1
+    NUM_STEPS = 1
+    FEATURE_COSTS = np.ones(NUM_FEATURES)
+    BUDGETS = np.ones(NUM_STEPS)
+    SPARSITY = 0.8
 
     # Generate a generative model of our data
     gentree = GenerativeTree(NUM_FEATURES, NUM_VALUES_PER_FEATURE, NUM_CLASSES, NUM_NODES)
 
     # Generate some sampled observations
-    data = gentree.sample(NUM_INSTANCES)
+    data = ma.masked_array(gentree.sample(NUM_INSTANCES), mask=np.zeros((NUM_INSTANCES, NUM_FEATURES+1)))
 
-    print 'Data:\n{0}'.format(pretty_str(data, 0))
+    # Hide some of the feature values at random
+    for i in xrange(NUM_INSTANCES):
+        while data.mask[i].sum() == 0:
+            for j in xrange(NUM_FEATURES):
+                if np.random.random() < SPARSITY:
+                    data.mask[i,j] = 1
 
-    print 'Rendering test.pdf...'
-    gentree.render('figures/test.pdf')
+    print 'Data:\n{0}'.format(data)
+    
+    print 'Rendering gentree.pdf...'
+    gentree.render('figures/gentree.pdf')
 
+    print 'Costs: {0}'.format(pretty_str(FEATURE_COSTS, 0))
+    print 'Budgets: {0}'.format(pretty_str(BUDGETS, 0))
 
+    instance = data[0]
+    available = list(np.random.choice(list(np.where(instance.mask != 0)[0]), NUM_STEPS, replace=False))
+    print 'Chosen: {0}'.format(available)
+
+    acqtree = FeatureAcquisitionTree(instance, gentree, gentree, FEATURE_COSTS, BUDGETS, available, NUM_VALUES_PER_FEATURE, NUM_CLASSES)
+
+    print 'Rendering acquisition_tree.pdf...'
+    acqtree.render('figures/acquisition_tree.pdf')
+
+    #values = list(np.random.choice(np.arange(NUM_VALUES_PER_FEATURE), len(available)))
+    #print 'p({0}={1} | {2})'.format(available, values, instance)
+    #print gentree.feature_probs(instance, available, values)
+    for val in xrange(NUM_VALUES_PER_FEATURE):
+        print 'p({0}={1} | {2})'.format(available, val, instance)
+        print gentree.feature_probs(instance, available, [val])
 
 
