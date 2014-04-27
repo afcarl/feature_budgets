@@ -45,7 +45,7 @@ class DecisionNode(object):
 
             # Remove this feature from the lists
             features = features[0:i] + features[i+1:]
-            values = values[0:i] + values[i+1:0]
+            values = values[0:i] + values[i+1:]
 
             # Weight the result by the likelihood of getting this feature value
             return self.weights[fval] * self.children[fval].feature_probs(instance, features, values, num_values_per_feature)
@@ -158,8 +158,7 @@ class GenerativeTree(object):
 
     def create_leaf_node(self, node_id):
         '''Create a random leaf node'''
-        class_weights = np.random.random(size=self.num_classes)
-        class_weights /= class_weights.sum()
+        class_weights = np.random.dirichlet(np.ones(self.num_classes) * 0.2)
         return LeafNode(node_id, class_weights)
 
     def try_to_add_node(self, node, features, next_id):
@@ -216,7 +215,7 @@ class GenerativeTree(object):
         '''Calculate the distribution of class membership likelihood for the instance.'''
         return self.root.predict(instance)
 
-    def feature_probs(self, instance, features, values):
+    def conditional_probs(self, instance, features, values):
         '''Calculate the joint probability of the feature values given the instance.'''
         return self.root.feature_probs(instance, features, values, self.num_values_per_feature)
 
@@ -247,11 +246,12 @@ class FeatureNode(object):
             dot.edge(str(self.node_id), str(child.node_id))
 
 class ValueNode(object):
-    def __init__(self, node_id, features, children, values):
+    def __init__(self, node_id, features, children, values, weights):
         self.node_id = node_id
         self.features = features
         self.children = children
         self.values = values
+        self.weights = weights
 
     def render(self, dot):
         '''Render the node graphically using the graphviz dot object.'''
@@ -259,43 +259,59 @@ class ValueNode(object):
             child.render(dot)
         dot.node(str(self.node_id), '', style='filled')
         for i,child in enumerate(self.children):
-            label = '\n'.join(['f{0}={1}'.format(f,v) for f,v in zip(self.features, self.values[i])])
+            label = '\n'.join(['f{0}={1}'.format(f,v) for f,v in zip(self.features, self.values[i])]) + '\np={0:.2f}'.format(self.weights[i])
             dot.edge(str(self.node_id), str(child.node_id), label=label)
 
 class StepRootNode(object):
-    def __init__(self, node_id, children, step):
+    def __init__(self, node_id, children, step, prediction):
         self.node_id = node_id
         self.children = children
         self.step = step
+        self.prediction = prediction
 
     def render(self, dot):
         '''Render the node graphically using the graphviz dot object.'''
         for child in self.children:
             child.render(dot)
-        dot.node(str(self.node_id), label='Step {0}'.format(self.step))
+        dot.node(str(self.node_id), label='Step {0}\n{1}'.format(self.step, pretty_str(self.prediction)))
         for child in self.children:
             dot.edge(str(self.node_id), str(child.node_id))
 
 class FeatureAcquisitionTree(object):
-    def __init__(self, instance, model, feature_probs, feature_costs, budgets, available_features, num_values_per_feature, num_classes):
+    def __init__(self, instance, model, feature_model, feature_costs, budgets, optional_features, num_values_per_feature, num_classes, target_feature=None):
         self.instance = instance
         self.model = model
-        self.feature_probs = feature_probs
+        self.feature_model = feature_model
         self.feature_costs = feature_costs
         self.budgets = budgets
-        self.available_features = available_features
+        self.target_feature = target_feature
+        self.optional_features = optional_features
         self.num_values_per_feature = num_values_per_feature
         self.num_classes = num_classes
         self.root = None
+        self.num_nodes = None
+        self.value = None
+        self.gain = None
         self.build()
 
     def build(self):
-        self.root = StepRootNode(0, [], 0)
-        next_id = 1
-        num_nodes = self.build_helper(self.root, self.available_features, 0, self.budgets[0], [], self.instance, next_id)
+        self.root = StepRootNode(0, [], 0, self.model.predict(self.instance))
+        if self.target_feature is None:
+            node = self.root
+            purchased = []
+            next_id = 1
+        else:
+            node = FeatureNode(1, self.target_feature, [])
+            self.root.children.append(node)
+            purchased = [self.target_feature]
+            next_id = 2
+        
+        self.num_nodes, self.value = self.build_helper(node, self.optional_features, 0, self.budgets[0], purchased, self.instance, next_id)
+        self.gain = self.value - max(self.root.prediction)
 
     def build_helper(self, node, available, step, remaining, purchased, instance, next_id):
         can_afford_at_least_one_feature = False
+        max_child_value = 0
         # Add each feature that is within our budget
         for i,feature in enumerate(available):
             child_remaining = remaining - self.feature_costs[feature]
@@ -310,16 +326,19 @@ class FeatureAcquisitionTree(object):
             child = FeatureNode(next_id, feature, [])
             
             # Recursively build the subtree with this feature acquired
-            next_id = self.build_helper(child, available[0:i] + available[i+1:],
+            next_id, child_value = self.build_helper(child, available[0:i] + available[i+1:],
                                         step, child_remaining,
                                         purchased + [feature], instance, next_id + 1)
 
             # Add the child to its parent
             node.children.append(child)
 
+            if child_value > max_child_value:
+                max_child_value = child_value
+
         # If we were able to afford at least one feature, then we don't need a partition node here.
         if can_afford_at_least_one_feature:
-            return next_id
+            return (next_id, max_child_value)
 
         # Make this the partition node
         step += 1
@@ -327,27 +346,35 @@ class FeatureAcquisitionTree(object):
         # Look at all combinations of results from the last step
         grandchildren_values = [x for x in product(xrange(self.num_values_per_feature), repeat=len(purchased))]
 
-        child = ValueNode(next_id, purchased, [], grandchildren_values)
+        child = ValueNode(next_id, purchased, [], grandchildren_values, [])
         next_id += 1
 
         # Consider every possible outcome of our feature acquisitions
+        child_value = 0
         temp_data = instance.data[purchased]
         for vals in grandchildren_values:
+            # Get the probability of this outcome actually occurring
+            weight = self.feature_model.conditional_probs(instance, purchased, vals)
+            child.weights.append(weight)
+
             # Set the feature values to this possibility
-            
             instance[purchased] = vals
+
+            # Get the prediction at this point
+            prediction = self.model.predict(instance)
 
             # If we there is no next step, return the final prediction
             if step == len(self.budgets) or len(available) == 0:
-                prediction = self.model.predict(instance)
                 child.children.append(LeafNode(next_id, prediction))
                 next_id += 1
+                child_value += weight * np.max(prediction)
 
             # Otherwise, start the whole process over again for each child node
             else:
-                grandchild = StepRootNode(next_id, [], step)
-                next_id = self.build_helper(grandchild, available, step, self.budgets[step], [], instance, next_id + 1)
+                grandchild = StepRootNode(next_id, [], step, prediction)
+                next_id, grandchild_value = self.build_helper(grandchild, available, step, self.budgets[step], [], instance, next_id + 1)
                 child.children.append(grandchild)
+                child_value += weight * grandchild_value
 
         # Undo the temporary changes to the instance
         instance.data[purchased] = temp_data
@@ -356,7 +383,7 @@ class FeatureAcquisitionTree(object):
         # Add the child to its parent
         node.children.append(child)
 
-        return next_id
+        return (next_id, child_value)
 
     def render(self, filename):
         '''Create a PDF image of the tree.'''

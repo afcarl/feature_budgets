@@ -57,18 +57,110 @@ Extensions:
         - The bounds for our rewards is a function of the number of instances potentially effected by our feature acquisition choices
         - The leaf rewards are weighted by the confidence of the change in our prediction
 '''
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from copy import deepcopy
 import numpy as np
 import numpy.ma as ma
 from utils import *
 from trees import *
 
-def generate_data(count):
-    pass
+class AcquisitionForestModel(object):
+    def __init__(self, feature_model, class_model, num_values_per_feature, num_classes, max_tree_count, max_feature_count):
+        self.feature_model = feature_model
+        self.class_model = class_model
+        self.num_values_per_feature = num_values_per_feature
+        self.num_classes = num_classes
+        self.max_tree_count = max_tree_count
+        self.max_feature_count = max_feature_count
 
-def create_model(data):
-    pass
+    def acquire(self, instance, costs, budgets):
+        missing = list(np.where(instance.mask != 0)[0])
+        scores = np.zeros(len(missing))
+        for iteration in xrange(self.max_tree_count):
+            # Get the target feature to evaluate
+            i = iteration % len(missing)
+            target = missing[i]
+
+            # Choose a random subset of features to consider
+            random_subset = list(np.random.choice(missing[0:i] + missing[i+1:], min(self.max_feature_count, len(missing)-1), replace=False))
+
+            # Build the acquisition tree
+            acqtree = FeatureAcquisitionTree(instance, self.class_model, self.feature_model,
+                                                costs, budgets, random_subset, self.num_values_per_feature,
+                                                self.num_classes, target_feature=target)
+
+            # Update the average score for the target feature
+            # based on the information gain from this tree
+            delta = int(self.max_tree_count / len(missing))
+            if i < (self.max_tree_count % len(missing)):
+                delta += 1
+            scores[i] += acqtree.gain / float(delta)
+
+        # Return the feature with the highest average score
+        return missing[np.argmax(scores)]
 
 
+def acquire_features_per_instance(data, costs, budgets, acquisition_model, class_model):
+    '''
+    Test the acquisition model's ability to improve its classification performance
+    on a per-instance cost-constrained problem.
+    '''
+    results = 0
+    for instance in data:
+        cur_instance = deepcopy(instance)
+        for i in xrange(len(budgets)):
+            cur_budgets = budgets[i:]
+            features_to_acquire = acquisition_model.acquire(cur_instance, costs, cur_budgets)
+            cur_instance.mask[features_to_acquire] = 0
+        
+        # Take the maximum likelihood class as our prediction
+        prediction = np.argmax(class_model.predict(cur_instance))
+        
+        # If we guessed correctly, we get a +1 reward
+        if prediction == instance.data[-1]:
+            results += 1
+    return results
+
+def sample_incomplete_dataset(gentree, sparsity_per_instance, num_instances):
+    data = ma.masked_array(gentree.sample(num_instances), mask=np.zeros((num_instances, gentree.num_features+1)))
+
+    # Hide some of the feature values at random
+    for i in xrange(num_instances):
+        while data.mask[i].sum() == 0:
+            for j in xrange(gentree.num_features):
+                if np.random.random() < sparsity_per_instance:
+                    data.mask[i,j] = 1
+
+    return data
+
+def plot_results(x, results):
+    COLORS = ['red', 'blue', 'green', 'gold']
+
+     # Initialize the plot
+    ax = plt.axes([.1,.1,.8,.7])
+
+    mean_y = results.mean(axis=1)
+    y_stderr = results.std(axis=1) / np.sqrt(results.shape[1])
+    min_y = mean_y - y_stderr
+    max_y = mean_y + y_stderr
+
+    # Plot the observed data points
+    plt.plot(x, mean_y, label='Acquisition Forests', color=COLORS[1])
+    plt.fill_between(x, min_y, max_y, facecolor=COLORS[1], alpha=0.2)
+
+    # Pretty up the plot
+    plt.xlim(0,max(x+1))
+    plt.xlabel('Simulated Acquisition Trees Per Acquisition')
+    plt.ylabel('Avg. Score Per Dataset')
+    plt.figtext(.40,.9, 'Acquisition Forest Performance on Synthetic Data', fontsize=18, ha='center')
+    plt.figtext(.40,.85, '{0} trials'.format(results.shape[1]), fontsize=10, ha='center')
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=12)
+    plt.savefig('figures/results.pdf')
+    plt.clf()
 
 
 if __name__ == '__main__':
@@ -76,26 +168,37 @@ if __name__ == '__main__':
     NUM_FEATURES = 10
     NUM_VALUES_PER_FEATURE = 2
     NUM_CLASSES = 3
-    NUM_INSTANCES = 10
+    NUM_INSTANCES_PER_TRIAL = 10
     NUM_NODES = 20
-    NUM_STEPS = 1
+    NUM_STEPS = 3
     FEATURE_COSTS = np.ones(NUM_FEATURES)
     BUDGETS = np.ones(NUM_STEPS)
     SPARSITY = 0.8
+    NUM_TRIALS = 20
+    MAX_OPTIONAL_FEATURES = 2
 
-    # Generate a generative model of our data
-    gentree = GenerativeTree(NUM_FEATURES, NUM_VALUES_PER_FEATURE, NUM_CLASSES, NUM_NODES)
+    MAX_TREE_COUNTS = [10, 20, 50, 100]
+    results = [[] for _ in MAX_TREE_COUNTS]
+    for trial in xrange(NUM_TRIALS):
+        print 'Trial {0}'.format(trial)
 
-    # Generate some sampled observations
-    data = ma.masked_array(gentree.sample(NUM_INSTANCES), mask=np.zeros((NUM_INSTANCES, NUM_FEATURES+1)))
+        # Generate a generative model of our data
+        gentree = GenerativeTree(NUM_FEATURES, NUM_VALUES_PER_FEATURE, NUM_CLASSES, NUM_NODES)
 
-    # Hide some of the feature values at random
-    for i in xrange(NUM_INSTANCES):
-        while data.mask[i].sum() == 0:
-            for j in xrange(NUM_FEATURES):
-                if np.random.random() < SPARSITY:
-                    data.mask[i,j] = 1
+        # Generate some sampled observations
+        print '\tGenerating dataset'
+        data = sample_incomplete_dataset(gentree, SPARSITY, NUM_INSTANCES_PER_TRIAL)
 
+        # Compare models with different amounts of simulation
+        for i,tree_counts in enumerate(MAX_TREE_COUNTS):
+            print '\tAcquisition Forest (max trees = {0})'.format(tree_counts)
+            model = AcquisitionForestModel(gentree, gentree, NUM_VALUES_PER_FEATURE, NUM_CLASSES, tree_counts, MAX_OPTIONAL_FEATURES)
+            results[i].append(acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, model, gentree))
+
+    results = np.array([np.array(x) for x in results])
+    plot_results(np.array(MAX_TREE_COUNTS), results)
+
+    '''
     print 'Data:\n{0}'.format(data)
     
     print 'Rendering gentree.pdf...'
@@ -108,16 +211,18 @@ if __name__ == '__main__':
     available = list(np.random.choice(list(np.where(instance.mask != 0)[0]), NUM_STEPS, replace=False))
     print 'Chosen: {0}'.format(available)
 
-    acqtree = FeatureAcquisitionTree(instance, gentree, gentree, FEATURE_COSTS, BUDGETS, available, NUM_VALUES_PER_FEATURE, NUM_CLASSES)
+    acqtree = FeatureAcquisitionTree(instance, gentree, gentree, FEATURE_COSTS, BUDGETS, available[1:], NUM_VALUES_PER_FEATURE, NUM_CLASSES, target_feature=available[0])
 
     print 'Rendering acquisition_tree.pdf...'
     acqtree.render('figures/acquisition_tree.pdf')
 
-    #values = list(np.random.choice(np.arange(NUM_VALUES_PER_FEATURE), len(available)))
-    #print 'p({0}={1} | {2})'.format(available, values, instance)
-    #print gentree.feature_probs(instance, available, values)
-    for val in xrange(NUM_VALUES_PER_FEATURE):
-        print 'p({0}={1} | {2})'.format(available, val, instance)
-        print gentree.feature_probs(instance, available, [val])
+    values = list(np.random.choice(np.arange(NUM_VALUES_PER_FEATURE), len(available)))
+    print 'p({0}={1} | {2})'.format(available, values, instance)
+    print gentree.conditional_probs(instance, available, values)
+    #for val in xrange(NUM_VALUES_PER_FEATURE):
+    #    print 'p({0}={1} | {2})'.format(available, val, instance)
+    #    print gentree.conditional_probs(instance, available, [val])
 
+    print 'Value of acquiring {0}: {1} --> Gain of {2}'.format(available[0], acqtree.value, acqtree.gain)
+    '''
 
