@@ -158,7 +158,7 @@ class GenerativeTree(object):
 
     def create_leaf_node(self, node_id):
         '''Create a random leaf node'''
-        class_weights = np.random.dirichlet(np.ones(self.num_classes) * 0.2)
+        class_weights = np.random.dirichlet(np.ones(self.num_classes) * 0.6)
         return LeafNode(node_id, class_weights)
 
     def try_to_add_node(self, node, features, next_id):
@@ -298,16 +298,19 @@ class FeatureAcquisitionTree(object):
         self.root = StepRootNode(0, [], 0, self.model.predict(self.instance))
         if self.target_feature is None:
             node = self.root
+            remaining = self.budgets[0]
             purchased = []
             next_id = 1
         else:
             node = FeatureNode(1, self.target_feature, [])
             self.root.children.append(node)
+            remaining = self.budgets[0] - self.feature_costs[self.target_feature]
             purchased = [self.target_feature]
             next_id = 2
         
-        self.num_nodes, self.value = self.build_helper(node, self.optional_features, 0, self.budgets[0], purchased, self.instance, next_id)
+        self.num_nodes, self.value = self.build_helper(node, self.optional_features, 0, remaining, purchased, self.instance, next_id)
         self.gain = self.value - max(self.root.prediction)
+        #self.gain = -np.sum(self.root.prediction * np.log(self.root.prediction)) - self.value # measure information gain
 
     def build_helper(self, node, available, step, remaining, purchased, instance, next_id):
         can_afford_at_least_one_feature = False
@@ -368,6 +371,7 @@ class FeatureAcquisitionTree(object):
                 child.children.append(LeafNode(next_id, prediction))
                 next_id += 1
                 child_value += weight * np.max(prediction)
+                #child_value += weight * -np.sum(prediction * np.log(prediction)) # Use information gain
 
             # Otherwise, start the whole process over again for each child node
             else:

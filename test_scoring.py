@@ -66,14 +66,73 @@ import numpy.ma as ma
 from utils import *
 from trees import *
 
-class AcquisitionForestModel(object):
-    def __init__(self, feature_model, class_model, num_values_per_feature, num_classes, max_tree_count, max_feature_count):
+def greedy_selection(budget, costs, ranked_features):
+    purchased = []
+    remaining = budget
+    for feature in ranked_features:
+        # If we have exhausted our budget, just stop
+        if remaining <= 0:
+            break
+
+        # If we can't afford this feature, skip it
+        if costs[feature] > remaining:
+            continue
+
+        # Add the feature to the purchase list
+        remaining -= costs[feature]
+        purchased.append(feature)
+
+    # Return the purchased features
+    return purchased
+
+class MyopicEntropyModel(object):
+    def __init__(self, feature_model, class_model, num_values_per_feature, num_classes):
+        self.feature_model = feature_model
+        self.class_model = class_model
+        self.num_values_per_feature = num_values_per_feature
+        self.num_classes = num_classes
+
+    def acquire(self, instance, costs, budgets):
+        missing = list(np.where(instance.mask != 0)[0])
+        max_feature = None
+        max_gain = None
+        baseline = self.entropy(self.class_model.predict(instance))
+        gains = []
+
+        for feature in missing:
+            # Copy the instance so we don't overwrite some values
+            temp_instance = deepcopy(instance)
+
+            # Track the information gain for this feature
+            gain = baseline
+
+            # Calculate the information gain for splitting on this feature next
+            for value in xrange(self.num_values_per_feature):
+                weight = self.feature_model.conditional_probs(instance, [feature], [value])
+                temp_instance[feature] = value
+                prediction = self.class_model.predict(temp_instance)
+                gain -= weight * self.entropy(prediction)
+
+            gains.append(gain)
+
+        # Rank the features by their information gain
+        ranked_features = [feature for gain, feature in sorted(zip(gains, missing))]
+
+        # Buy in a greedy fashion
+        return greedy_selection(budgets[0], costs, ranked_features)
+
+    def entropy(self, distribution):
+        return -np.sum(distribution * np.log(distribution))
+
+class AveragingAcquisitionForestModel(object):
+    def __init__(self, feature_model, class_model, num_values_per_feature, num_classes, max_tree_count, max_feature_count, use_max=False):
         self.feature_model = feature_model
         self.class_model = class_model
         self.num_values_per_feature = num_values_per_feature
         self.num_classes = num_classes
         self.max_tree_count = max_tree_count
         self.max_feature_count = max_feature_count
+        self.use_max = use_max
 
     def acquire(self, instance, costs, budgets):
         missing = list(np.where(instance.mask != 0)[0])
@@ -91,15 +150,82 @@ class AcquisitionForestModel(object):
                                                 costs, budgets, random_subset, self.num_values_per_feature,
                                                 self.num_classes, target_feature=target)
 
-            # Update the average score for the target feature
-            # based on the information gain from this tree
-            delta = int(self.max_tree_count / len(missing))
-            if i < (self.max_tree_count % len(missing)):
-                delta += 1
-            scores[i] += acqtree.gain / float(delta)
+            if self.use_max:
+                scores[i] = max(scores[i], acqtree.gain)
+            else:
+                # Update the average score for the target feature
+                # based on the information gain from this tree
+                delta = int(self.max_tree_count / len(missing))
+                if i < (self.max_tree_count % len(missing)):
+                    delta += 1
+                scores[i] += acqtree.gain / float(delta)
 
-        # Return the feature with the highest average score
-        return missing[np.argmax(scores)]
+        # Rank the features by their information gain
+        ranked_features = [feature for score, feature in sorted(zip(scores, missing))]
+
+        # Buy in a greedy fashion
+        return greedy_selection(budgets[0], costs, ranked_features)
+
+class BanditAcquisitionForestModel(object):
+    def __init__(self, feature_model, class_model, num_values_per_feature, num_classes, max_tree_count, max_feature_count, use_max=False):
+        self.feature_model = feature_model
+        self.class_model = class_model
+        self.num_values_per_feature = num_values_per_feature
+        self.num_classes = num_classes
+        self.max_tree_count = max_tree_count
+        self.max_feature_count = max_feature_count
+        self.use_max = use_max
+
+    def acquire(self, instance, costs, budgets):
+        missing = list(np.where(instance.mask != 0)[0])
+        counts = np.ones(len(missing), dtype=float)
+        means = np.zeros(len(missing))
+        scores = np.zeros(len(missing))
+        
+        
+        # Try each arm once
+        for i,feature in enumerate(missing):
+            means[i] = self.evaluate(feature, missing[0:i] + missing[i+1:], instance, costs, budgets)
+        
+        scores = means + np.sqrt(2*np.log(len(missing)))
+
+        for iteration in xrange(len(missing), self.max_tree_count):
+            # Choose the feature optimally via UCB-1
+            feature = np.argmax(scores)
+
+            # Evaluate the feature
+            s = self.evaluate(missing[feature], missing[0:feature] + missing[feature+1:],
+                                instance, costs, budgets)
+
+            # Update the scores
+            counts[feature] += 1
+            if self.use_max:
+                # Take the maximum pull from a rollout since we are not concerned with average gain
+                means[feature] = np.max(means[feature], s)
+                scores = means - np.sqrt(0.5*counts/np.log(iteration+1))
+            else:
+                # Standard UCB-1
+                means[feature] = (means[feature] * (counts[feature]-1) + s) / counts[feature]
+                scores = means + np.sqrt(2*np.log(iteration+1) / counts)
+
+        # Rank the features by their information gain
+        ranked_features = [feature for score, feature in sorted(zip(scores, missing))]
+
+        # Buy in a greedy fashion
+        return greedy_selection(budgets[0], costs, ranked_features)
+
+
+    def evaluate(self, target, available, instance, costs, budgets):
+        # Choose a random subset of features to consider
+        random_subset = list(np.random.choice(available, min(self.max_feature_count, len(available)), replace=False))
+
+        # Build the acquisition tree
+        acqtree = FeatureAcquisitionTree(instance, self.class_model, self.feature_model,
+                                            costs, budgets, random_subset, self.num_values_per_feature,
+                                            self.num_classes, target_feature=target)
+
+        # Measure the information gain of this feature
+        return acqtree.gain
 
 
 def acquire_features_per_instance(data, costs, budgets, acquisition_model, class_model):
@@ -121,41 +247,51 @@ def acquire_features_per_instance(data, costs, budgets, acquisition_model, class
         # If we guessed correctly, we get a +1 reward
         if prediction == instance.data[-1]:
             results += 1
-    return results
 
-def sample_incomplete_dataset(gentree, sparsity_per_instance, num_instances):
+    return results / float(len(data))
+
+def sample_incomplete_dataset(gentree, sparsity_per_instance, num_instances, min_missing_per_instance):
     data = ma.masked_array(gentree.sample(num_instances), mask=np.zeros((num_instances, gentree.num_features+1)))
 
     # Hide some of the feature values at random
     for i in xrange(num_instances):
-        while data.mask[i].sum() == 0:
+        while data.mask[i].sum() < min_missing_per_instance:
             for j in xrange(gentree.num_features):
                 if np.random.random() < sparsity_per_instance:
                     data.mask[i,j] = 1
 
     return data
 
-def plot_results(x, results):
+def plot_results(x, baseline, results, names):
     COLORS = ['red', 'blue', 'green', 'gold']
 
      # Initialize the plot
     ax = plt.axes([.1,.1,.8,.7])
 
-    mean_y = results.mean(axis=1)
-    y_stderr = results.std(axis=1) / np.sqrt(results.shape[1])
+    # Plot the baseline
+    mean_y = baseline.mean()
+    y_stderr = baseline.std() / np.sqrt(len(baseline))
     min_y = mean_y - y_stderr
     max_y = mean_y + y_stderr
+    plt.axhline(mean_y, linestyle='--', color='darkgray')
+    plt.fill_between(x, min_y, max_y, facecolor='gray', alpha=0.2)
 
-    # Plot the observed data points
-    plt.plot(x, mean_y, label='Acquisition Forests', color=COLORS[1])
-    plt.fill_between(x, min_y, max_y, facecolor=COLORS[1], alpha=0.2)
+    for i,result in enumerate(results):
+        mean_y = result.mean(axis=1)
+        y_stderr = result.std(axis=1) / np.sqrt(result.shape[1])
+        min_y = mean_y - y_stderr
+        max_y = mean_y + y_stderr
+
+        # Plot the observed data points
+        plt.plot(x, mean_y, label=names[i], color=COLORS[i])
+        plt.fill_between(x, min_y, max_y, facecolor=COLORS[i], alpha=0.2)
 
     # Pretty up the plot
     plt.xlim(0,max(x+1))
-    plt.xlabel('Simulated Acquisition Trees Per Acquisition')
+    plt.xlabel('Tree Rollouts Per Decision')
     plt.ylabel('Avg. Score Per Dataset')
-    plt.figtext(.40,.9, 'Acquisition Forest Performance on Synthetic Data', fontsize=18, ha='center')
-    plt.figtext(.40,.85, '{0} trials'.format(results.shape[1]), fontsize=10, ha='center')
+    plt.figtext(.40,.9, 'Performance of Feature Acquisition Trees', fontsize=18, ha='center')
+    plt.figtext(.40,.85, '{0} trials'.format(results[0].shape[1]), fontsize=10, ha='center')
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=12)
@@ -165,20 +301,27 @@ def plot_results(x, results):
 
 if __name__ == '__main__':
     # The parameters of the experiment
-    NUM_FEATURES = 10
+    NUM_FEATURES = 30
     NUM_VALUES_PER_FEATURE = 2
     NUM_CLASSES = 3
-    NUM_INSTANCES_PER_TRIAL = 10
-    NUM_NODES = 20
-    NUM_STEPS = 3
+    NUM_INSTANCES_PER_TRIAL = 20
+    NUM_NODES = 40
+    NUM_STEPS = 1
+    NUM_ACQUISITIONS_PER_STEP = 3
     FEATURE_COSTS = np.ones(NUM_FEATURES)
-    BUDGETS = np.ones(NUM_STEPS)
-    SPARSITY = 0.8
-    NUM_TRIALS = 20
-    MAX_OPTIONAL_FEATURES = 2
+    BUDGETS = np.ones(NUM_STEPS) * NUM_ACQUISITIONS_PER_STEP
+    SPARSITY = 0.5
+    MIN_MISSING = BUDGETS.sum()
+    NUM_TRIALS = 30
+    MAX_OPTIONAL_FEATURES = 3
 
-    MAX_TREE_COUNTS = [10, 20, 50, 100]
-    results = [[] for _ in MAX_TREE_COUNTS]
+    MAX_TREE_COUNTS = [20, 50, 100, 200]
+    avg_results = [[] for _ in MAX_TREE_COUNTS]
+    max_results = [[] for _ in MAX_TREE_COUNTS]
+    ucb_results = [[] for _ in MAX_TREE_COUNTS]
+    max_ucb_results = [[] for _ in MAX_TREE_COUNTS]
+    baseline_results = np.zeros(NUM_TRIALS)
+    init_results = np.zeros(NUM_TRIALS)
     for trial in xrange(NUM_TRIALS):
         print 'Trial {0}'.format(trial)
 
@@ -187,16 +330,43 @@ if __name__ == '__main__':
 
         # Generate some sampled observations
         print '\tGenerating dataset'
-        data = sample_incomplete_dataset(gentree, SPARSITY, NUM_INSTANCES_PER_TRIAL)
+        data = sample_incomplete_dataset(gentree, SPARSITY, NUM_INSTANCES_PER_TRIAL, MIN_MISSING)
+
+        # Get the initial prediction results without acquiring any features
+        for instance in data:
+            prediction = np.argmax(gentree.predict(instance))
+            if instance.data[-1] == prediction:
+                init_results[trial] += 1. / float(len(data))
+
+        # Get the baseline results using simple myopic entropy purchasing
+        baseline_model = MyopicEntropyModel(gentree, gentree, NUM_VALUES_PER_FEATURE, NUM_CLASSES)
+        baseline_results[trial] = acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, baseline_model, gentree)
 
         # Compare models with different amounts of simulation
         for i,tree_counts in enumerate(MAX_TREE_COUNTS):
             print '\tAcquisition Forest (max trees = {0})'.format(tree_counts)
-            model = AcquisitionForestModel(gentree, gentree, NUM_VALUES_PER_FEATURE, NUM_CLASSES, tree_counts, MAX_OPTIONAL_FEATURES)
-            results[i].append(acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, model, gentree))
+            model = AveragingAcquisitionForestModel(gentree, gentree, NUM_VALUES_PER_FEATURE, NUM_CLASSES, tree_counts, MAX_OPTIONAL_FEATURES)
+            avg_results[i].append(acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, model, gentree))
+            model = AveragingAcquisitionForestModel(gentree, gentree, NUM_VALUES_PER_FEATURE, NUM_CLASSES, tree_counts, MAX_OPTIONAL_FEATURES, use_max=True)
+            max_results[i].append(acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, model, gentree))
+            model = BanditAcquisitionForestModel(gentree, gentree, NUM_VALUES_PER_FEATURE, NUM_CLASSES, tree_counts, MAX_OPTIONAL_FEATURES)
+            ucb_results[i].append(acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, model, gentree))
+            model = BanditAcquisitionForestModel(gentree, gentree, NUM_VALUES_PER_FEATURE, NUM_CLASSES, tree_counts, MAX_OPTIONAL_FEATURES, use_max=True)
+            max_ucb_results[i].append(acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, model, gentree))
 
-    results = np.array([np.array(x) for x in results])
-    plot_results(np.array(MAX_TREE_COUNTS), results)
+        print 'Current Results:'
+        print 'Initial: {0:.2f}'.format(init_results[0:trial+1].mean())
+        print 'Baseline: {0:.2f}'.format(baseline_results[0:trial+1].mean())
+        print 'Avging Acq Trees     {0}: {1}'.format(MAX_TREE_COUNTS, ['{0:.2f}'.format(np.array(x).mean()) for x in avg_results])
+        print 'Maxing Acq Trees     {0}: {1}'.format(MAX_TREE_COUNTS, ['{0:.2f}'.format(np.array(x).mean()) for x in max_results])
+        print 'UCB-1 Acq Trees      {0}: {1}'.format(MAX_TREE_COUNTS, ['{0:.2f}'.format(np.array(x).mean()) for x in ucb_results])
+        print 'Max-UCB1 Acq Trees   {0}: {1}'.format(MAX_TREE_COUNTS, ['{0:.2f}'.format(np.array(x).mean()) for x in max_ucb_results])
+
+    avg_results = np.array([np.array(x) for x in avg_results])
+    max_results = np.array([np.array(x) for x in max_results])
+    ucb_results = np.array([np.array(x) for x in ucb_results])
+    max_ucb_results = np.array([np.array(x) for x in max_ucb_results])
+    plot_results(np.array(MAX_TREE_COUNTS), baseline_results, [avg_results, max_results, ucb_results, max_ucb_results], ['Averaging', 'Max', 'UCB-1', 'Max-UCB'])
 
     '''
     print 'Data:\n{0}'.format(data)
