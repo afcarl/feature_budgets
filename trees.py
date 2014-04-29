@@ -140,12 +140,14 @@ class GenerativeTree(object):
     TODO: Add dirichlet bias for certain features
     TODO: Add path coloring for a given instance
     '''
-    def __init__(self, num_features, num_values_per_feature, num_classes, max_nodes):
+    def __init__(self, num_features, num_values_per_feature, num_classes, max_nodes, feature_bias=None, class_bias=None):
         assert(max_nodes > 0)
         self.num_features = num_features
         self.num_values_per_feature = num_values_per_feature
         self.num_classes = num_classes
         self.max_nodes = max_nodes
+        self.feature_bias = np.ones(num_features) if feature_bias is None else feature_bias
+        self.class_bias = np.ones(num_classes) if class_bias is None else class_bias
         self.root = None
         self.build()
 
@@ -158,7 +160,7 @@ class GenerativeTree(object):
 
     def create_leaf_node(self, node_id):
         '''Create a random leaf node'''
-        class_weights = np.random.dirichlet(np.ones(self.num_classes) * 0.6)
+        class_weights = np.random.dirichlet(self.class_bias)
         return LeafNode(node_id, class_weights)
 
     def try_to_add_node(self, node, features, next_id):
@@ -177,7 +179,8 @@ class GenerativeTree(object):
         # If we reached the end, we can add a node
         if type(child) is LeafNode:
             # Choose one of the remaining features and build the new node parameters
-            feature = np.random.choice(features)
+            idx = weighted_sample(self.feature_bias[features])
+            feature = features[idx]
             children = [self.create_leaf_node(next_id + i) for i in xrange(self.num_values_per_feature)]
             weights = np.random.random(size=self.num_values_per_feature)
             weights /= weights.sum()

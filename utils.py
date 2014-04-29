@@ -3,6 +3,28 @@ import re
 import numpy as np
 import numpy.ma as ma
 
+def greedy_selection(budget, costs, ranked_features):
+    '''
+    Greedily select the features until the budget is exhausted.
+    '''
+    purchased = []
+    remaining = budget
+    for feature in ranked_features:
+        # If we have exhausted our budget, just stop
+        if remaining <= 0:
+            break
+
+        # If we can't afford this feature, skip it
+        if costs[feature] > remaining:
+            continue
+
+        # Add the feature to the purchase list
+        remaining -= costs[feature]
+        purchased.append(feature)
+
+    # Return the purchased features
+    return purchased
+
 def weighted_sample(weights):
     '''Randomly sample a value proportional to the given weights.'''
     probs = weights / weights.sum()
