@@ -6,7 +6,11 @@ import numpy as np
 import numpy.ma as ma
 from copy import deepcopy
 from itertools import product
-from graphviz import Digraph
+try:
+    from graphviz import Digraph
+except ImportError:
+    sys.path.append('/u/tansey/.local/lib/python2.7/site-packages')
+    from graphviz import Digraph
 from utils import *
 
 class DecisionNode(object):
