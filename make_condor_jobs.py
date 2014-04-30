@@ -22,7 +22,7 @@ make_directory(experiment_dir, 'error')
 f = open(jobsfile, 'wb')
 f.write("""universe = vanilla
 Executable=/lusr/bin/python
-Requirements = Precise
+Requirements = Precise && ARCH == "X86_64"
 +Group   = "GRAD"
 +Project = "AI_ROBOTICS"
 +ProjectDescription = "Cost-constrained feature acquisition experiment."
