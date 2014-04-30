@@ -59,6 +59,7 @@ Extensions:
 '''
 import argparse
 import csv
+sys.path.append('/u/tansey/.local/lib/python2.7/site-packages/')
 import numpy as np
 import numpy.ma as ma
 from utils import *
