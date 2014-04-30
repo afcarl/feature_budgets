@@ -60,8 +60,11 @@ Extensions:
 import sys
 import argparse
 import csv
-sys.path.append('/u/tansey/local/lib/python2.7/site-packages/')
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    sys.path.remove('/u/tansey/.local/lib/python2.7/site-packages')
+    import numpy as np
 import numpy.ma as ma
 from utils import *
 from trees import *
