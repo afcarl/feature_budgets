@@ -9,6 +9,7 @@ from itertools import product
 try:
     from graphviz import Digraph
 except ImportError:
+    import sys
     sys.path.append('/u/tansey/.local/lib/python2.7/site-packages')
     from graphviz import Digraph
 from utils import *
