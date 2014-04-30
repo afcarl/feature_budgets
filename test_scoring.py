@@ -57,9 +57,10 @@ Extensions:
         - The bounds for our rewards is a function of the number of instances potentially effected by our feature acquisition choices
         - The leaf rewards are weighted by the confidence of the change in our prediction
 '''
+import sys
 import argparse
 import csv
-sys.path.append('/u/tansey/.local/lib/python2.7/site-packages/')
+sys.path.append('/u/tansey/local/lib/python2.7/site-packages/numpy/core/lib')
 import numpy as np
 import numpy.ma as ma
 from utils import *
