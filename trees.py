@@ -173,7 +173,7 @@ class GenerativeTree(object):
             return next_id
 
         # Pick one of the children nodes
-        child_idx = np.random.choice(len(node.children))
+        child_idx = random.choice(np.arange(len(node.children)))
         child = node.children[child_idx]
 
         # If we reached the end, we can add a node

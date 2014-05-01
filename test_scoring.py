@@ -148,8 +148,6 @@ if __name__ == '__main__':
     # Get the arguments from the command line
     args = parser.parse_args()
 
-    print 'Version: {0}'.format(np.__version__)
-
     # The parameters of the experiment
     FEATURE_COSTS = np.ones(args.features)
     BUDGETS = np.ones(args.steps) * args.acquisitions_per_step
