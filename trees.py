@@ -204,7 +204,7 @@ class GenerativeTree(object):
         results = []
         for iteration in xrange(count):
             # Set all values to be random and known initially
-            instance = ma.masked_array(np.random.choice(self.num_values_per_feature, self.num_features+1),
+            instance = ma.masked_array([random.choice(np.arange(self.num_values_per_feature)) for _ in xrange(self.num_features+1)],
                                         mask=np.zeros(self.num_features+1, dtype=int))
 
             # Sample our decision tree to add structure to the data.
