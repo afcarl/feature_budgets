@@ -1,11 +1,6 @@
 import csv
 import re
-try:
-    import numpy as np
-except ImportError:
-    import sys
-    sys.path.remove('/u/tansey/.local/lib/python2.7/site-packages')
-    import numpy as np
+import numpy as np
 import numpy.ma as ma
 
 def greedy_selection(budget, costs, ranked_features):
