@@ -4,6 +4,7 @@ Tools to generate various types of synthetic data.
 import os
 import numpy as np
 import numpy.ma as ma
+import random
 from copy import deepcopy
 from itertools import product
 from graphviz import Digraph
