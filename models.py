@@ -1,4 +1,5 @@
 from copy import deepcopy
+import random
 import numpy as np
 import numpy.ma as ma
 from utils import *
@@ -64,7 +65,8 @@ class AveragingAcquisitionForestModel(object):
             target = missing[i]
 
             # Choose a random subset of features to consider
-            random_subset = list(np.random.choice(missing[0:i] + missing[i+1:], min(self.max_feature_count, len(missing)-1), replace=False))
+            #random_subset = list(np.random.choice(missing[0:i] + missing[i+1:], min(self.max_feature_count, len(missing)-1), replace=False))
+            random_subset = random.sample(missing[0:i] + missing[i+1:], min(self.max_feature_count, len(missing)-1))
 
             # Build the acquisition tree
             acqtree = FeatureAcquisitionTree(instance, self.class_model, self.feature_model,
@@ -139,7 +141,8 @@ class BanditAcquisitionForestModel(object):
 
     def evaluate(self, target, available, instance, costs, budgets):
         # Choose a random subset of features to consider
-        random_subset = list(np.random.choice(available, min(self.max_feature_count, len(available)), replace=False))
+        #random_subset = list(np.random.choice(available, min(self.max_feature_count, len(available)), replace=False))
+        random_subset = random.sample(available, min(self.max_feature_count, len(available)))
 
         # Build the acquisition tree
         acqtree = FeatureAcquisitionTree(instance, self.class_model, self.feature_model,
