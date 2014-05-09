@@ -194,7 +194,7 @@ if __name__ == '__main__':
 
         # Evaluate each model
         for i, model in enumerate(models):
-            results[i+1, trial] = acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, model, gentree)
+            results[i+2, trial] = acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, model, gentree)
             print '\t{0}: {1:.2f}'.format(model.name, results[i+2, trial])
 
     with open(args.outfile, 'wb') as f:
@@ -202,3 +202,11 @@ if __name__ == '__main__':
         writer.writerow(names)
         writer.writerows(results.T)
     #plot_results(np.array(MAX_TREE_COUNTS), baseline_results, [avg_results, max_results, ucb_results, max_ucb_results], ['Averaging', 'Max', 'UCB-1', 'Max-UCB'])
+
+
+
+
+
+
+
+
