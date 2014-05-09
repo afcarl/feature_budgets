@@ -171,14 +171,22 @@ if __name__ == '__main__':
 
         # Initialize the results if this is the first trial
         if trial == 0:
-            results = np.zeros((len(models)+1, args.trials))
-            names = ['Initial'] + [model.name for model in models]
+            results = np.zeros((len(models)+2, args.trials))
+            names = ['Complete', 'Initial'] + [model.name for model in models]
+
+        # Get the prediction results if we had all the features
+        for instance in data:
+            cur_instance = deepcopy(instance)
+            cur_instance.mask = np.zeros(len(cur_instance.mask))
+            prediction = np.argmax(gentree.predict(cur_instance))
+            if cur_instance.data[-1] == prediction:
+                results[1,trial] += 1. / float(len(data))
 
         # Get the initial prediction results without acquiring any features
         for instance in data:
             prediction = np.argmax(gentree.predict(instance))
             if instance.data[-1] == prediction:
-                results[0,trial] += 1. / float(len(data))
+                results[1,trial] += 1. / float(len(data))
 
         print '\tInitial: {0:.2f}'.format(results[0,trial])
 
