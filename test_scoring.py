@@ -109,7 +109,7 @@ def get_models(feature_model, class_model, args):
                                                 args.classes))
         else:
             for tree_count in args.max_tree_counts:
-                if model == 'avg' or 'max':
+                if model == 'avg' or model == 'max':
                     models.append(AveragingAcquisitionForestModel(gentree, gentree,
                                                         args.values_per_feature,
                                                         args.classes, tree_count,
