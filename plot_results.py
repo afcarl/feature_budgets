@@ -29,7 +29,7 @@ class ModelResults(object):
             y_stderr = result.std() / np.sqrt(len(result))
             min_y = mean_y - y_stderr
             max_y = mean_y + y_stderr
-            ax.axhline(mean_y, linestyle='--', color='dark' + color, label=self.name)
+            ax.axhline(mean_y, linestyle='--', color=color, label=self.name)
             #plt.fill_between(x_vals, min_y, max_y, facecolor=color, alpha=0.2)
         # Otherwise, we have multiple variants of this model we are testing
         else:
@@ -95,7 +95,7 @@ def load_results(results_dir, model_names):
 
 
 def plot_results(results, outfile):
-    COLORS = ['gray', 'green', 'red', 'blue', 'gold', 'purple', 'orange', 'yellow']
+    COLORS = ['black', 'green', 'red', 'blue', 'gold', 'purple', 'orange', 'yellow']
 
      # Initialize the plot
     ax = plt.axes([.1,.1,.8,.7])
