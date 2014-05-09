@@ -180,7 +180,9 @@ if __name__ == '__main__':
             cur_instance.mask = np.zeros(len(cur_instance.mask))
             prediction = np.argmax(gentree.predict(cur_instance))
             if cur_instance.data[-1] == prediction:
-                results[1,trial] += 1. / float(len(data))
+                results[0,trial] += 1. / float(len(data))
+
+        print 'Complete: {0:.2f}'.format(results[0,trial])
 
         # Get the initial prediction results without acquiring any features
         for instance in data:
@@ -188,12 +190,12 @@ if __name__ == '__main__':
             if instance.data[-1] == prediction:
                 results[1,trial] += 1. / float(len(data))
 
-        print '\tInitial: {0:.2f}'.format(results[0,trial])
+        print '\tInitial: {0:.2f}'.format(results[1,trial])
 
         # Evaluate each model
         for i, model in enumerate(models):
             results[i+1, trial] = acquire_features_per_instance(data, FEATURE_COSTS, BUDGETS, model, gentree)
-            print '\t{0}: {1:.2f}'.format(model.name, results[i+1, trial])
+            print '\t{0}: {1:.2f}'.format(model.name, results[i+2, trial])
 
     with open(args.outfile, 'wb') as f:
         writer = csv.writer(f)
