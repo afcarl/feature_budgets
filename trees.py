@@ -59,6 +59,15 @@ class DecisionNode(object):
         # If this feature is a conditional parameter, find that node and recurse on it
         return self.children[instance[self.feature]].feature_probs(instance, features, values, num_values_per_feature)
 
+    def marginal(self, feature, num_values_per_feature):
+        '''Calculate the marginal probability of each value for this feature'''
+        if self.feature == feature:
+            # If we are splitting on this feature, just return the splitting probs
+            return weights
+        result = np.zeros(num_values_per_feature)
+        for child,weight in zip(self.children, self.weights):
+            result += weight * child.marginal(feature, num_values_per_feature)
+
     def sample(self, instance):
         '''
         Build a new instance by sampling features.
@@ -99,6 +108,9 @@ class LeafNode(object):
         # uniformly distributed.
         return (1. / num_values_per_feature) ** len(features)
 
+    def marginal(self, feature, num_values_per_feature):
+        return np.ones(num_values_per_feature) / float(num_values_per_feature)
+
     def sample(self, instance):
         instance[-1] = weighted_sample(self.probs)
 
@@ -124,6 +136,9 @@ class RootNode(object):
     def feature_probs(self, instance, features, values, num_values_per_feature):
         return self.children[0].feature_probs(instance, features, values, num_values_per_feature)
 
+    def marginal(self, feature, num_values_per_feature):
+        return self.children[0].marginal(feature, num_values_per_feature)
+
     def sample(self, instance):
         return self.children[0].sample(instance)
 
@@ -137,8 +152,6 @@ class RootNode(object):
 class GenerativeTree(object):
     '''
     A generative model for synthetic data.
-    TODO: Add dirichlet bias for certain classes
-    TODO: Add dirichlet bias for certain features
     TODO: Add path coloring for a given instance
     '''
     def __init__(self, num_features, num_values_per_feature, num_classes, max_nodes, feature_bias=None, class_bias=None):
@@ -149,6 +162,7 @@ class GenerativeTree(object):
         self.max_nodes = max_nodes
         self.feature_bias = np.ones(num_features) if feature_bias is None else feature_bias
         self.class_bias = np.ones(num_classes) if class_bias is None else class_bias
+        self.marginals = [None for _ in xrange(num_features)]
         self.root = None
         self.build()
 
@@ -222,6 +236,13 @@ class GenerativeTree(object):
     def conditional_probs(self, instance, features, values):
         '''Calculate the joint probability of the feature values given the instance.'''
         return self.root.feature_probs(instance, features, values, self.num_values_per_feature)
+
+    def marginal(self, feature):
+        '''Calculate the marginal probability distribution for the feature'''
+        if self.marginals[feature] is None:
+            # Calculate marginals in a lazy fashion for efficiency
+            self.marginals[feature] = self.root.marginal(feature, self.num_values_per_feature)
+        return self.marginals[feature]
 
     def graphviz_str(self):
         '''Generate a graphviz string of the tree.'''
