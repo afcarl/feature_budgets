@@ -125,7 +125,7 @@ def get_models(feature_model, class_model, args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tests a suite of strategies for cost-constrained feature acquisition.')
-    parser.add_argument('models', nargs='+', choices=['avg', 'max', 'ucb-avg', 'ucb-max'])
+    parser.add_argument('models', nargs='+', choices=['baseline', 'avg', 'max', 'ucb-avg', 'ucb-max'])
     
     # General experiment arguments
     parser.add_argument('--features', type=int, default=20, help='The number of total features per instance.')

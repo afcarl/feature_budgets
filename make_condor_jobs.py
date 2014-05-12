@@ -31,7 +31,7 @@ Requirements = Precise && ARCH == "X86_64"
 """)
 
 job = """Log = {0}/condor_logs/{1}.log
-Arguments = test_scoring.py avg max ucb-avg ucb-max --features 50 --values_per_feature 2 --classes 3 --instances 100 --data_nodes 40 --steps 1 --acquisitions_per_step 3 --sparsity 0.5 --trials 1 --feature_bias 0.6 --class_bias 0.6 --outfile {0}/results/{1}.csv --max_optional_features 2 --max_tree_counts 25 50 100 200 500 1000 2000
+Arguments = test_scoring.py baseline avg max ucb-avg ucb-max --features 50 --values_per_feature 2 --classes 3 --instances 100 --data_nodes 40 --steps 1 --acquisitions_per_step 3 --sparsity 0.5 --trials 1 --feature_bias 0.6 --class_bias 0.6 --outfile {0}/results/{1}.csv --max_optional_features 2 --max_tree_counts 25 50 100 200 500 1000 2000
 Output = {0}/output/{1}.out
 Error = {0}/error/{1}.log
 Queue 1
