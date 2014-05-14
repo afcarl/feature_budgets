@@ -112,11 +112,11 @@ def plot_results(results, outfile):
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=12)
-    plt.savefig('figures/results.pdf')
+    plt.savefig(outfile)
     plt.clf()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Tests a suite of strategies for cost-constrained feature acquisition.')
+    parser = argparse.ArgumentParser(description='Plots test results for a suite of strategies for cost-constrained feature acquisition.')
     parser.add_argument('--models', nargs='+', choices=[ 'initial', 'complete', 'baseline', 'avg', 'max', 'ucb-avg', 'ucb-max'], help='The list of models used in the experiments.')
     parser.add_argument('--outfile', default='figures/results.pdf', help='The filename to output the plot.')
     parser.add_argument('--indir', default='experiment/results/', help='The directory containing the results files.')
@@ -128,4 +128,5 @@ if __name__ == '__main__':
     results = load_results(args.indir, args.models)
 
     # Generate a plot of the results
+    print 'Saving plot to {0}'.format(args.outfile)
     plot_results(results, args.outfile)
