@@ -60,6 +60,7 @@ Extensions:
 import sys
 import argparse
 import csv
+import random
 import numpy as np
 import numpy.ma as ma
 from utils import *
@@ -93,7 +94,7 @@ def sample_incomplete_dataset(gentree, sparsity_per_instance, num_instances):
 
     # Hide some of the feature values at random
     for i in xrange(num_instances):
-        to_hide = np.random.choice(data.shape[1], int(sparsity_per_instance*data.shape[1]), replace=False)
+        to_hide = random.sample(np.arange(data.shape[1], dtype=int), int(sparsity_per_instance*data.shape[1]))
         data.mask[i, to_hide] = 1
     
     return data

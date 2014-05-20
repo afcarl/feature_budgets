@@ -117,7 +117,7 @@ def plot_results(results, outfile):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Plots test results for a suite of strategies for cost-constrained feature acquisition.')
-    parser.add_argument('--models', nargs='+', choices=[ 'initial', 'complete', 'baseline', 'avg', 'max', 'ucb-avg', 'ucb-max'], help='The list of models used in the experiments.')
+    parser.add_argument('--models', nargs='+', choices=[ 'initial', 'complete', 'optimal', 'baseline', 'avg', 'max', 'ucb-avg', 'ucb-max'], help='The list of models used in the experiments.')
     parser.add_argument('--outfile', default='figures/results.pdf', help='The filename to output the plot.')
     parser.add_argument('--indir', default='experiment/results/', help='The directory containing the results files.')
 

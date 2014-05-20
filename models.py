@@ -19,7 +19,7 @@ class ExhaustiveEnumerationModel(object):
         missing = list(np.where(instance.mask != 0)[0])
         temp_instance = deepcopy(instance)
         num_to_acquire = int(budgets[0])
-        print 'Trying all combinations of {0} choose {1}'.format(len(missing), num_to_acquire)
+        print '\t\tTrying all combinations of {0} choose {1}'.format(len(missing), num_to_acquire)
         feature_values = list(product(*[np.arange(self.num_values_per_feature, dtype=int) for _ in xrange(num_to_acquire)]))
         max_subset = None
         max_score = None
