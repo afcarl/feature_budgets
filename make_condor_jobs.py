@@ -15,13 +15,13 @@ experiment_dir = make_directory(os.getcwd(), EXPERIMENT_NAME.replace(' ', '_'))
 jobsfile = experiment_dir + '/jobs'
 description_file = experiment_dir + '/description.txt'
 
-FEATURES = 50
+FEATURES = 40
 VALUES_PER_FEATURE = 2
 CLASSES = 3
 INSTANCES = 100
 DATA_NODES = 40
 STEPS = 1
-ACQUISITIONS_PER_STEP = 9
+ACQUISITIONS_PER_STEP = 5
 SPARSITY = 0.5
 TRIALS = 1
 FEATURE_BIAS = 0.6
@@ -46,7 +46,7 @@ Requirements = Precise && ARCH == "X86_64"
 """)
 
 job = """Log = {0}/condor_logs/{1}.log
-Arguments = test_scoring.py baseline avg max ucb-avg ucb-max --features {2} --values_per_feature {3} --classes {4} --instances {5} --data_nodes {6} --steps {7} --acquisitions_per_step {8} --sparsity {9} --trials {10} --feature_bias {11} --class_bias {12} --max_optional_features {13} --max_tree_counts {14} --outfile {0}/results/{1}.csv
+Arguments = test_scoring.py baseline optimal avg max ucb-avg ucb-max --features {2} --values_per_feature {3} --classes {4} --instances {5} --data_nodes {6} --steps {7} --acquisitions_per_step {8} --sparsity {9} --trials {10} --feature_bias {11} --class_bias {12} --max_optional_features {13} --max_tree_counts {14} --outfile {0}/results/{1}.csv
 Output = {0}/output/{1}.out
 Error = {0}/error/{1}.log
 Queue 1

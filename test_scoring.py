@@ -88,16 +88,14 @@ def acquire_features_per_instance(data, costs, budgets, acquisition_model, class
 
     return results / float(len(data))
 
-def sample_incomplete_dataset(gentree, sparsity_per_instance, num_instances, min_missing_per_instance):
+def sample_incomplete_dataset(gentree, sparsity_per_instance, num_instances):
     data = ma.masked_array(gentree.sample(num_instances), mask=np.zeros((num_instances, gentree.num_features+1)))
 
     # Hide some of the feature values at random
     for i in xrange(num_instances):
-        while data.mask[i].sum() < min_missing_per_instance:
-            for j in xrange(gentree.num_features):
-                if np.random.random() < sparsity_per_instance:
-                    data.mask[i,j] = 1
-
+        to_hide = np.random.choice(data.shape[1], int(sparsity_per_instance*data.shape[1]), replace=False)
+        data.mask[i, to_hide] = 1
+    
     return data
 
 def get_models(feature_model, class_model, args):
@@ -105,6 +103,10 @@ def get_models(feature_model, class_model, args):
     for model in args.models:
         if model == 'baseline':
             models.append(MyopicEntropyModel(feature_model, class_model,
+                                                args.values_per_feature,
+                                                args.classes))
+        elif model == 'optimal':
+            models.append(ExhaustiveEnumerationModel(feature_model, class_model,
                                                 args.values_per_feature,
                                                 args.classes))
         else:
@@ -125,7 +127,7 @@ def get_models(feature_model, class_model, args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tests a suite of strategies for cost-constrained feature acquisition.')
-    parser.add_argument('models', nargs='+', choices=['baseline', 'avg', 'max', 'ucb-avg', 'ucb-max'])
+    parser.add_argument('models', nargs='+', choices=['baseline', 'optimal', 'avg', 'max', 'ucb-avg', 'ucb-max'])
     
     # General experiment arguments
     parser.add_argument('--features', type=int, default=20, help='The number of total features per instance.')
@@ -151,7 +153,6 @@ if __name__ == '__main__':
     # The parameters of the experiment
     FEATURE_COSTS = np.ones(args.features)
     BUDGETS = np.ones(args.steps) * args.acquisitions_per_step
-    MIN_MISSING = BUDGETS.sum()
     FEATURE_BIAS = np.random.dirichlet(np.ones(args.features) * args.feature_bias)
     CLASS_BIAS = np.ones(args.classes) * args.class_bias
     results = None
@@ -164,7 +165,7 @@ if __name__ == '__main__':
 
         # Generate some sampled observations
         print '\tGenerating dataset'
-        data = sample_incomplete_dataset(gentree, args.sparsity, args.instances, MIN_MISSING)
+        data = sample_incomplete_dataset(gentree, args.sparsity, args.instances)
 
         # Get the models to test
         models = get_models(gentree, gentree, args)
@@ -172,7 +173,7 @@ if __name__ == '__main__':
         # Initialize the results if this is the first trial
         if trial == 0:
             results = np.zeros((len(models)+2, args.trials))
-            names = ['Complete', 'Initial'] + [model.name for model in models]
+            names = ['Complete', 'Initial', 'Optimal'] + [model.name for model in models]
 
         # Get the prediction results if we had all the features
         for instance in data:

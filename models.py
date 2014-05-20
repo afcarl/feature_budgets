@@ -2,8 +2,53 @@ from copy import deepcopy
 import random
 import numpy as np
 import numpy.ma as ma
+from itertools import combinations, product
 from utils import *
 from trees import *
+
+class ExhaustiveEnumerationModel(object):
+    '''TODO: Make this model handle more than one step.'''
+    def __init__(self, feature_model, class_model, num_values_per_feature, num_classes):
+        self.feature_model = feature_model
+        self.class_model = class_model
+        self.num_values_per_feature = num_values_per_feature
+        self.num_classes = num_classes
+        self.name = 'Optimal'
+
+    def acquire(self, instance, costs, budgets):
+        missing = list(np.where(instance.mask != 0)[0])
+        temp_instance = deepcopy(instance)
+        num_to_acquire = int(budgets[0])
+        print 'Trying all combinations of {0} choose {1}'.format(len(missing), num_to_acquire)
+        feature_values = list(product(*[np.arange(self.num_values_per_feature, dtype=int) for _ in xrange(num_to_acquire)]))
+        max_subset = None
+        max_score = None
+        for subset in combinations(missing, num_to_acquire):
+            score = 0
+
+            for values in feature_values:
+                # Get the probability for this outcome if we buy these features
+                weight = self.feature_model.conditional_probs(temp_instance, subset, values)
+
+                # Set the values
+                for feature, value in zip(subset, values):
+                    temp_instance[feature] = value
+
+                # Get the predictive power
+                score += weight * max(self.class_model.predict(temp_instance))
+
+                # Hide everything
+                for feature, value in zip(subset, values):
+                    temp_instance.mask[feature] = 1
+
+            # If this is the best result thus far, keep track of it
+            if max_score is None or score > max_score:
+                max_subset = subset
+                max_score = score
+
+        # Buy the best possible subset.
+        return list(max_subset)
+
 
 class MyopicEntropyModel(object):
     def __init__(self, feature_model, class_model, num_values_per_feature, num_classes):
