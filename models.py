@@ -16,7 +16,7 @@ class ExhaustiveEnumerationModel(object):
         self.name = 'Optimal'
 
     def acquire(self, instance, costs, budgets):
-        missing = list(np.where(instance.mask != 0)[0])
+        missing = list(np.where(instance.mask[:-1] != 0)[0])
         temp_instance = deepcopy(instance)
         num_to_acquire = int(budgets[0])
         print '\t\tTrying all combinations of {0} choose {1}'.format(len(missing), num_to_acquire)
@@ -25,7 +25,8 @@ class ExhaustiveEnumerationModel(object):
         max_score = None
         for subset in combinations(missing, num_to_acquire):
             score = 0
-
+            if 40 in subset:
+                print 'yep: {0}'.format(subset)
             for values in feature_values:
                 # Get the probability for this outcome if we buy these features
                 weight = self.feature_model.conditional_probs(temp_instance, subset, values)
@@ -59,7 +60,7 @@ class MyopicEntropyModel(object):
         self.name = 'Baseline'
 
     def acquire(self, instance, costs, budgets):
-        missing = list(np.where(instance.mask != 0)[0])
+        missing = list(np.where(instance.mask[:-1] != 0)[0])
         max_feature = None
         max_gain = None
         baseline = self.entropy(self.class_model.predict(instance))
@@ -102,7 +103,7 @@ class AveragingAcquisitionForestModel(object):
         self.name = '{0}-{1}'.format('Max' if use_max else 'Avg', max_tree_count)
 
     def acquire(self, instance, costs, budgets):
-        missing = list(np.where(instance.mask != 0)[0])
+        missing = list(np.where(instance.mask[:-1] != 0)[0])
         scores = np.zeros(len(missing))
         for iteration in xrange(self.max_tree_count):
             # Get the target feature to evaluate
@@ -146,7 +147,7 @@ class BanditAcquisitionForestModel(object):
         self.name = 'UCB-{0}-{1}'.format('Max' if use_max else 'Avg', max_tree_count)
 
     def acquire(self, instance, costs, budgets):
-        missing = list(np.where(instance.mask != 0)[0])
+        missing = list(np.where(instance.mask[:-1] != 0)[0])
         counts = np.ones(len(missing), dtype=float)
         means = np.zeros(len(missing))
         scores = np.zeros(len(missing))

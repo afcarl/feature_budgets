@@ -94,7 +94,7 @@ def sample_incomplete_dataset(gentree, sparsity_per_instance, num_instances):
 
     # Hide some of the feature values at random
     for i in xrange(num_instances):
-        to_hide = random.sample(np.arange(data.shape[1], dtype=int), int(sparsity_per_instance*data.shape[1]))
+        to_hide = random.sample(np.arange(gentree.num_features, dtype=int), int(sparsity_per_instance*gentree.num_features))
         data.mask[i, to_hide] = 1
     
     return data
@@ -184,7 +184,7 @@ if __name__ == '__main__':
             if cur_instance.data[-1] == prediction:
                 results[0,trial] += 1. / float(len(data))
 
-        print 'Complete: {0:.2f}'.format(results[0,trial])
+        print '\tComplete: {0:.2f}'.format(results[0,trial])
 
         # Get the initial prediction results without acquiring any features
         for instance in data:
